@@ -1,0 +1,28 @@
+# Deny everything at the repository root, then re-include only this project.
+# An allowlist rather than a list of exclusions: the working directory also
+# holds unrelated audio work and a virtualenv, and anything new dropped in
+# here should stay untracked by default rather than needing a new rule.
+/*
+!/.gitignore
+!/README.md
+!/LICENSE
+!/firmware/
+!/app/
+
+# --- Android ---
+app/build/
+app/app/build/
+app/.gradle/
+app/.kotlin/
+app/local.properties
+*.apk
+*.aab
+.idea/
+*.iml
+
+# --- Arduino / firmware build output ---
+firmware/**/build/
+*.hex
+*.elf
+*.zip
+*.uf2
