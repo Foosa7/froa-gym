@@ -101,6 +101,13 @@ void ImuBleService::onConfigWrite(const uint8_t* data, uint16_t len) {
   ConfigPacket in;
   memcpy(&in, data, sizeof(in));
 
+  // Sleep is a command: act on it, then strip it so a subsequent read does not
+  // report a permanently pending shutdown.
+  if (in.flags & CFG_SLEEP) {
+    sleep_requested_ = true;
+    in.flags = (uint8_t)(in.flags & ~CFG_SLEEP);
+  }
+
   // Clamp to what the hardware can actually do, so a bad write cannot wedge
   // the stream. 208 Hz is the highest LSM6DS3TR-C ODR this firmware uses.
   if (in.rate_hz > 208) in.rate_hz = 208;
@@ -114,6 +121,23 @@ void ImuBleService::onConfigWrite(const uint8_t* data, uint16_t len) {
 
   // Echo the clamped values back so a read reflects what is really in effect.
   cfg_.write(&config_, sizeof(config_));
+}
+
+bool ImuBleService::takeSleepRequest() {
+  if (!sleep_requested_) return false;
+  sleep_requested_ = false;
+  return true;
+}
+
+void ImuBleService::shutdownRadio() {
+  // Disconnect first so the central is told, rather than being left to time
+  // out after several seconds wondering where we went.
+  for (uint16_t h = 0; h < BLE_MAX_CONNECTION; h++) {
+    BLEConnection* c = Bluefruit.Connection(h);
+    if (c != nullptr && c->connected()) c->disconnect();
+  }
+  Bluefruit.Advertising.stop();
+  delay(50);
 }
 
 bool ImuBleService::takeConfigChange(ConfigPacket* out) {

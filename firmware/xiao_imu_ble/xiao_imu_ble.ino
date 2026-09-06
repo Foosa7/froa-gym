@@ -111,6 +111,54 @@ static uint8_t readBatteryPercent() {
 #endif
 }
 
+// Puts the board into nRF52 System OFF: the deepest sleep the part has, a few
+// microamps, with RAM and peripherals unpowered. There is no software wake
+// from this -- the RESET button (or cycling power) restarts the sketch from
+// scratch, which is the intended way back.
+//
+// Powering the peripherals down first matters far more than the sleep call:
+// the IMU alone draws around a milliamp in high-performance mode, which would
+// swamp a microamp-level sleep current several hundred times over.
+static void enterDeepSleep() {
+  Serial.println(F("Entering deep sleep. Press RESET to wake."));
+  Serial.flush();
+
+  ble.shutdownRadio();
+
+  // IMU rail off. Reconfigured to standard drive on the way down; the high
+  // drive is only needed to source the sensor's current, not to hold it low.
+  nrf_gpio_cfg_output(NRF_GPIO_PIN_MAP(1, 8));
+  nrf_gpio_pin_clear(NRF_GPIO_PIN_MAP(1, 8));
+
+  // Microphone rail off (never enabled by this firmware, but be explicit).
+  nrf_gpio_cfg_output(NRF_GPIO_PIN_MAP(1, 10));
+  nrf_gpio_pin_clear(NRF_GPIO_PIN_MAP(1, 10));
+
+  // LEDs are active low, so HIGH is off.
+  pinMode(LED_RED, OUTPUT);   digitalWrite(LED_RED, HIGH);
+  pinMode(LED_GREEN, OUTPUT); digitalWrite(LED_GREEN, HIGH);
+  pinMode(LED_BLUE, OUTPUT);  digitalWrite(LED_BLUE, HIGH);
+
+#if defined(VBAT_ENABLE)
+  // HIGH disconnects the battery divider; leaving it connected burns current
+  // through it continuously for no reason while asleep.
+  pinMode(VBAT_ENABLE, OUTPUT);
+  digitalWrite(VBAT_ENABLE, HIGH);
+#endif
+
+  delay(20);
+
+  // With the SoftDevice enabled the power registers are owned by it, so this
+  // has to go through the SoC API rather than NRF_POWER directly.
+  sd_power_system_off();
+
+  // Only reached if the SoftDevice refused (or a debugger is attached, which
+  // emulates System OFF instead of entering it). Fall back to the raw
+  // register, then park rather than pretending we slept.
+  NRF_POWER->SYSTEMOFF = 1;
+  while (true) delay(1000);
+}
+
 void setup() {
   Serial.begin(115200);
   // Wait briefly for a host to open the port, but never block on it - the
@@ -164,6 +212,10 @@ void setup() {
 }
 
 void loop() {
+  if (ble.takeSleepRequest()) {
+    enterDeepSleep();   // does not return
+  }
+
   ConfigPacket updated;
   if (ble.takeConfigChange(&updated)) {
     applyConfig(updated);

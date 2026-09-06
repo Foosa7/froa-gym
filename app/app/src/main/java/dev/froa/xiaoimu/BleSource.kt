@@ -27,6 +27,7 @@ class BleSource(
 ) : ImuSource {
 
     private var gatt: BluetoothGatt? = null
+    private var configChar: BluetoothGattCharacteristic? = null
     private var scanning = false
     private val handler = Handler(Looper.getMainLooper())
 
@@ -79,6 +80,7 @@ class BleSource(
             gatt?.close()
         }
         gatt = null
+        configChar = null
     }
 
     private val scanCallback = object : ScanCallback() {
@@ -129,6 +131,7 @@ class BleSource(
                     g.writeDescriptor(cccd)
                 }
             }
+            configChar = svc.getCharacteristic(CONFIG_UUID)
             onState(ConnState.Connected(g.device.address ?: "BLE"))
         }
 
@@ -144,6 +147,23 @@ class BleSource(
             g: BluetoothGatt, chr: BluetoothGattCharacteristic,
         ) {
             if (chr.uuid == SAMPLE_UUID) chr.value?.let { ImuSample.parse(it)?.let(onSample) }
+        }
+    }
+
+    override fun writeConfig(data: ByteArray): Boolean {
+        val g = gatt ?: return false
+        val chr = configChar ?: return false
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            g.writeCharacteristic(
+                chr, data, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            ) == BluetoothGatt.GATT_SUCCESS
+        } else {
+            @Suppress("DEPRECATION")
+            run {
+                chr.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                chr.value = data
+                g.writeCharacteristic(chr)
+            }
         }
     }
 

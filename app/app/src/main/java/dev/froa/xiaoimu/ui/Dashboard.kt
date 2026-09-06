@@ -19,13 +19,19 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -52,7 +58,10 @@ fun Dashboard(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onBack: (() -> Unit)? = null,
+    /** Null when the active source cannot send commands (e.g. the bridge). */
+    onSleepDevice: (() -> Unit)? = null,
 ) {
+    var confirmSleep by remember { mutableStateOf(false) }
     val accelScale = remember { MutableFloatHolder(2f) }
     val gyroScale = remember { MutableFloatHolder(250f) }
 
@@ -73,6 +82,28 @@ fun Dashboard(
         Text("LSM6DS3TR-C · 6-axis IMU", color = TextLo, fontSize = 13.sp)
 
         ConnectionCard(state, stats, source, onSourceChange, onConnect, onDisconnect)
+
+        if (onSleepDevice != null) {
+            CardBox {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Power off sensor", color = TextHi, fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium)
+                        Text(
+                            "Deep sleep — only the RESET button wakes it",
+                            color = TextLo, fontSize = 11.sp,
+                        )
+                    }
+                    Text(
+                        "Sleep", color = Warn, fontSize = 14.sp,
+                        modifier = Modifier
+                            .clickable { confirmSleep = true }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                    )
+                }
+            }
+        }
 
         if (sample != null) {
             ReadingsCard(sample)
@@ -122,6 +153,33 @@ fun Dashboard(
             }
         }
     }
+
+    if (confirmSleep && onSleepDevice != null) {
+        SleepConfirmDialog(onConfirm = onSleepDevice, onDismiss = { confirmSleep = false })
+    }
+}
+
+@Composable
+private fun SleepConfirmDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardBgColor,
+        title = { Text("Power off the sensor?", color = TextHi) },
+        text = {
+            Text(
+                "The board enters deep sleep and stops advertising. There is no " +
+                    "way to wake it from the app — you will need to press the " +
+                    "RESET button on the board itself.",
+                color = TextLo,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(); onDismiss() }) {
+                Text("Sleep", color = Warn)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextLo) } },
+    )
 }
 
 @Composable

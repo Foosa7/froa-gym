@@ -151,6 +151,48 @@ Standard Battery (`0x180F`) and Device Information (`0x180A`) services are also
 present. Battery percentage is a coarse linear map of the 3.4–4.1 V range read
 through the board's 1 MΩ/510 kΩ divider — a battery bar, not a fuel gauge.
 
+## Power: there is no on/off switch
+
+The XIAO has no power switch. Without a command, the only way to stop it is to
+remove power — unplug USB **and** disconnect the battery. Cutting USB alone does
+nothing if a cell is attached to the BAT pads.
+
+So the firmware provides one. Writing `flags` bit0 (`0x01`) in the Config
+characteristic puts the board into nRF52 **System OFF**: the deepest sleep the
+part has, single-digit microamps, RAM and peripherals unpowered.
+
+```
+a3c87502-…  ->  32 04 03 01     # 50 Hz, ±4 g, ±2000 °/s, sleep now
+```
+
+Before sleeping it disconnects the central (so the peer sees a clean
+disconnect rather than a supervision timeout), cuts the IMU and microphone
+rails, turns the LEDs off, and disconnects the battery divider.
+
+**Powering the peripherals down matters far more than the sleep call itself.**
+The IMU alone draws roughly a milliamp in high-performance mode, which would
+swamp a microamp-level sleep current by a factor of several hundred.
+
+### Waking it
+
+**The RESET button, or a power cycle.** There is deliberately no software wake:
+System OFF does not preserve execution state, so the sketch restarts from
+`setup()` either way. Nothing over BLE can reach a sleeping board — the radio
+is off.
+
+### Caveats
+
+- **With USB connected, System OFF may not stick.** VBUS is a wake source on the
+  nRF52840, so a board on USB can wake or reset straight back out of it. Test it
+  on battery.
+- With a debugger attached, System OFF is *emulated* rather than entered, and
+  current stays high. The fallback path in `enterDeepSleep()` parks in a loop
+  rather than pretending it slept.
+- The onboard 2 MB QSPI flash sits in standby (order of tens of microamps)
+  rather than its deep power-down mode. Squeezing that last bit out needs the
+  flash's `0xB9` command via `Adafruit_SPIFlash`, which this firmware otherwise
+  does not depend on. Seeed's own deep-sleep example shows the pattern.
+
 ## On the achievable rate
 
 **The connection interval, not `rate_hz`, is the real ceiling.** One

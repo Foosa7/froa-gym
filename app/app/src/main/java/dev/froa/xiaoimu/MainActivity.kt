@@ -123,6 +123,11 @@ class MainActivity : ComponentActivity() {
                     onConnect = connect,
                     onDisconnect = { repo.disconnect() },
                     onBack = goHome,
+                    // Only offered over direct BLE: the bridge is a one-way
+                    // relay with no path back to the board.
+                    onSleepDevice = if (repo.canControlDevice()) {
+                        { repo.sleepSensor(); repo.disconnect() }
+                    } else null,
                 )
             }
         }

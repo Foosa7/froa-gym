@@ -33,13 +33,15 @@ struct __attribute__((packed)) ConfigPacket {
   uint8_t rate_hz;      // notification rate, 1..208; 0 pauses the stream
   uint8_t accel_g;      // full scale: 2, 4, 8 or 16
   uint8_t gyro_code;    // full scale: 0=245, 1=500, 2=1000, 3=2000 deg/s
-  uint8_t flags;        // reserved, write 0
+  uint8_t flags;        // bit0: enter deep sleep (command, not state)
 };
 static_assert(sizeof(ConfigPacket) == 4, "ConfigPacket layout changed");
 
 class ImuBleService {
  public:
   static constexpr uint8_t FLAG_DROPPED = 0x01;  // a notification was lost
+  /** ConfigPacket::flags bit0 - asks the board to power down. */
+  static constexpr uint8_t CFG_SLEEP = 0x01;
 
   ImuBleService();
 
@@ -62,6 +64,15 @@ class ImuBleService {
   // the flag. Poll this from loop() and reconfigure the sensor when it fires.
   bool takeConfigChange(ConfigPacket* out);
 
+  // True once the client has asked the board to sleep. Kept separate from the
+  // config because it is a command, not state: it must not persist into the
+  // echoed config or survive a wake.
+  bool takeSleepRequest();
+
+  // Stops advertising and drops any link, so the peer sees a clean disconnect
+  // instead of a supervision timeout when we power down.
+  void shutdownRadio();
+
   void setBatteryLevel(uint8_t percent) { battery_.write(percent); }
 
  private:
@@ -81,6 +92,7 @@ class ImuBleService {
 
   ConfigPacket config_;
   volatile bool config_dirty_ = false;
+  volatile bool sleep_requested_ = false;
 
   static ImuBleService* instance_;
 };

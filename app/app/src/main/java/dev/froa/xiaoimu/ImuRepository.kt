@@ -69,6 +69,18 @@ class ImuRepository(private val context: Context) {
         s.start()
     }
 
+    /** True when the active source can send commands back to the board. */
+    fun canControlDevice(): Boolean = source is BleSource && state.value is ConnState.Connected
+
+    /**
+     * Asks the board to power down. It will disconnect and stop advertising;
+     * only the RESET button brings it back.
+     */
+    fun sleepSensor(): Boolean {
+        val cfg = ImuRepository.sleepCommand()
+        return source?.writeConfig(cfg) ?: false
+    }
+
     fun disconnect() {
         source?.stop()
         source = null
@@ -120,11 +132,26 @@ class ImuRepository(private val context: Context) {
         }
     }
 
-    private companion object { const val FRAME_MS = 33L }  // ~30 fps
+    companion object {
+        private const val FRAME_MS = 33L   // ~30 fps
+
+        /** ConfigPacket with the sleep bit set; other fields are left alone. */
+        fun sleepCommand(): ByteArray = byteArrayOf(50, 4, 3, CFG_SLEEP)
+
+        /** ConfigPacket.flags bit0 — matches the firmware's CFG_SLEEP. */
+        const val CFG_SLEEP: Byte = 0x01
+    }
 }
 
 /** A live feed of samples from somewhere. */
 interface ImuSource {
     fun start()
     fun stop()
+
+    /**
+     * Writes the 4-byte config characteristic. Only the direct BLE source can
+     * do this: the bridge is a one-way relay of notifications, with no path
+     * back to the board.
+     */
+    fun writeConfig(data: ByteArray): Boolean = false
 }
