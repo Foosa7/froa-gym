@@ -23,6 +23,7 @@ Options:
 
 import argparse
 import asyncio
+import signal
 import struct
 import sys
 
@@ -70,10 +71,10 @@ def broadcast(payload: bytes) -> None:
             clients.discard(w)
 
 
-async def run_ble(name: str, show: bool) -> None:
+async def run_ble(name: str, show: bool, stop: asyncio.Event) -> None:
     """Connect to the board and pump notifications into the socket clients."""
     count = 0
-    while True:
+    while not stop.is_set():
         print(f"[ble] scanning for {name!r}…")
         device = await BleakScanner.find_device_by_name(name, timeout=10.0)
         if device is None:
@@ -99,11 +100,20 @@ async def run_ble(name: str, show: bool) -> None:
                         print(f"[ble] {count} packets -> {len(clients)} client(s)")
 
                 await client.start_notify(SAMPLE_UUID, handler)
-                while client.is_connected:
+                while client.is_connected and not stop.is_set():
                     await asyncio.sleep(0.5)
+                # Leaving the `async with` disconnects, which is what lets the
+                # board advertise again. Without this the peripheral stays in a
+                # connection and is invisible to every other device -- pressing
+                # reset on the board does not help, because the host end of the
+                # link is what is holding it.
+                if stop.is_set():
+                    print("[ble] releasing the board so it can advertise again")
         except Exception as exc:
             print(f"[ble] error: {exc}")
 
+        if stop.is_set():
+            return
         print("[ble] disconnected; reconnecting in 2s")
         await asyncio.sleep(2)
 
@@ -115,16 +125,27 @@ async def main() -> int:
     ap.add_argument("--decode", action="store_true", help="print each reading")
     args = ap.parse_args()
 
+    # Disconnect cleanly on SIGINT/SIGTERM. A BLE peripheral stops advertising
+    # while connected, so exiting without releasing the link leaves the board
+    # invisible to phones until something disconnects it host-side.
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except NotImplementedError:
+            pass   # not available on every platform
+
     server = await asyncio.start_server(on_client, "0.0.0.0", args.port)
     print(f"[tcp] listening on 0.0.0.0:{args.port}")
     print("[tcp] emulator reaches this host at 10.0.2.2")
     async with server:
-        await asyncio.gather(server.serve_forever(), run_ble(args.name, args.decode))
+        ble_task = asyncio.create_task(run_ble(args.name, args.decode, stop))
+        await stop.wait()
+        print("\n[bridge] shutting down…")
+        await ble_task
     return 0
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(asyncio.run(main()))
-    except KeyboardInterrupt:
-        print("\nbye")
+    sys.exit(asyncio.run(main()))

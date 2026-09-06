@@ -90,6 +90,18 @@ To run it in an Android emulator instead — which has no Bluetooth radio at all
 `app/tools/imu_bridge.py` relays the board over your laptop's Bluetooth to a TCP
 socket the app reads.
 
+## Gotcha: the board goes invisible
+
+If the board stops showing up on your phone and resetting it changes nothing,
+something else is still connected to it. A BLE peripheral stops advertising
+while in a connection, so the laptop bridge or another phone holding the link
+makes it invisible to everything else — and resetting the *board* does not help,
+because the host end owns the connection. Stop the bridge, and if the OS is
+still holding the link, `bluetoothctl disconnect <MAC>`.
+
+Also note it will not appear in Android's Bluetooth settings at all: it is a
+BLE peripheral with no pairing. Connect from the app or nRF Connect.
+
 ## Status
 
 Verified: firmware streaming, BLE service, the app's BLE and bridge paths,

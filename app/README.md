@@ -204,6 +204,46 @@ separable by any threshold, which is why the signal plot, the sensitivity
 slider and manual `±` correction all exist -- and why hand-edited sets are
 marked `✎` and carry a non-zero `manualDelta` in the data.
 
+## Troubleshooting
+
+### The board is invisible to my phone, and resetting it does nothing
+
+Almost always: **something else is already connected to it.** A BLE peripheral
+stops advertising while it is in a connection, so while the laptop bridge (or
+nRF Connect on another device) holds the link, the board is invisible to
+everything else. Pressing reset on the board does not help — the *host* end is
+holding the connection.
+
+Stop the bridge with Ctrl-C, which now releases the board on the way out. If it
+was killed less gracefully, the OS may still be holding the link even though
+the process is gone. On Linux:
+
+```sh
+bluetoothctl devices Connected          # is XIAO-IMU listed?
+bluetoothctl disconnect <MAC>           # release it
+```
+
+Then confirm it is advertising again:
+
+```sh
+bluetoothctl --timeout 10 scan le | grep -i XIAO
+```
+
+### It does not show up in Android's Bluetooth settings
+
+It will not, and that is expected. This is a BLE peripheral with a custom GATT
+service and no pairing — such devices generally do not appear in the system
+Bluetooth list. **There is nothing to pair.** Connect from this app (tracking
+screen → **Bluetooth** → Connect) or from nRF Connect.
+
+### Connected, but no data
+
+Check the sensor status on the tracking screen. If it says connected but reps
+never move and the signal plot is flat, the board may be streaming while sitting
+still — the detector deliberately ignores motion below its noise floor. The
+**Raw sensor** screen shows the unfiltered stream, which distinguishes "no data"
+from "no movement".
+
 ## Build requirements
 
 - A real **JDK** (not a JRE) — Gradle needs `javac`. On this machine every JVM
